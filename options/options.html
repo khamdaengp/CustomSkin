@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CustomSkin - Options & Themes Manager</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="dark-theme">
+  <div class="app-layout">
+    <!-- Top Navigation / Header -->
+    <header class="app-header">
+      <div class="header-container">
+        <div class="brand">
+          <img src="../icons/icon-48.png" alt="CustomSkin" class="brand-logo">
+          <div class="brand-text">
+            <h1>CustomSkin</h1>
+            <span class="brand-tagline">Theme & Style Manager</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="btn-export-all" class="btn btn-secondary" title="Export all themes to a JSON file">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export All (JSON)
+          </button>
+          <label for="import-file-input" class="btn btn-secondary" title="Import themes from JSON backup">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Import Backup
+          </label>
+          <input type="file" id="import-file-input" accept=".json,application/json" class="visually-hidden">
+          
+          <button id="btn-add-domain" class="btn btn-primary" title="Add a custom theme for a new domain">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Domain
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-container">
+      <!-- Search & Stats Toolbar -->
+      <section class="toolbar">
+        <div class="search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="search-input" placeholder="Search customized domains..." autocomplete="off">
+          <button id="btn-clear-search" class="clear-search hidden" title="Clear search">&times;</button>
+        </div>
+        <div class="stats-counter" id="stats-counter">
+          0 domains customized
+        </div>
+      </section>
+
+      <!-- Domains List -->
+      <section class="domains-list-section">
+        <div id="domains-container" class="domains-grid">
+          <!-- Populated by JavaScript -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="empty-state hidden">
+          <div class="empty-icon">🎨</div>
+          <h2>No Custom Themes Yet</h2>
+          <p>You haven't styled any websites yet. Visit any site and click the CustomSkin extension icon in your browser toolbar, or click "Add Domain" above to create one right now!</p>
+          <button id="btn-empty-add" class="btn btn-primary">+ Add Your First Domain</button>
+        </div>
+
+        <!-- Search No Results State -->
+        <div id="no-results" class="empty-state hidden">
+          <div class="empty-icon">🔍</div>
+          <h2>No Matching Domains</h2>
+          <p>No customized websites matched your search query.</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Edit / Add Domain Modal -->
+    <div id="editor-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="modal-title">Edit Custom Theme</h2>
+          <button id="btn-close-modal" class="modal-close" aria-label="Close dialog">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="modal-domain-input">Website Domain</label>
+            <div class="domain-input-wrapper">
+              <span class="domain-prefix">https://</span>
+              <input type="text" id="modal-domain-input" placeholder="example.com" spellcheck="false" autocomplete="off">
+            </div>
+            <span class="form-hint">Enter the target hostname (e.g. <code>github.com</code> or <code>reddit.com</code>)</span>
+          </div>
+
+          <div class="form-group-toggle">
+            <label class="switch" for="modal-toggle">
+              <input type="checkbox" id="modal-toggle" checked>
+              <span class="slider"></span>
+            </label>
+            <span id="modal-toggle-label" class="toggle-text">Theme Enabled</span>
+          </div>
+
+          <div class="form-group flex-1">
+            <div class="editor-header-bar">
+              <label for="modal-css-textarea">Custom CSS</label>
+              <div class="modal-editor-tools">
+                <button type="button" id="btn-modal-template" class="btn-subtle">+ Dark Mode Template</button>
+              </div>
+            </div>
+
+            <!-- Enhanced CSS Editor -->
+            <div class="editor-wrapper modal-editor-wrapper">
+              <div class="line-numbers" id="modal-line-numbers" aria-hidden="true">
+                <span>1</span>
+              </div>
+              <div class="editor-content-area">
+                <pre id="modal-highlight-backdrop" class="highlight-backdrop" aria-hidden="true"><code id="modal-highlight-code"></code></pre>
+                <textarea id="modal-css-textarea" class="css-textarea" placeholder="/* Enter custom CSS rules */&#10;body {&#10;  background: #111 !important;&#10;  color: #fff !important;&#10;}" spellcheck="false"></textarea>
+              </div>
+            </div>
+            <div class="editor-footer">
+              <span id="modal-editor-stats" class="editor-stats">0 lines • 0 chars</span>
+              <span class="hint">Tab to indent (2 spaces) • Ctrl+S / Cmd+S to save</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-cancel-modal" class="btn btn-secondary">Cancel</button>
+          <button id="btn-save-modal" class="btn btn-primary">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Confirmation Modal -->
+    <div id="import-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-card modal-sm">
+        <div class="modal-header">
+          <h2>Import Themes</h2>
+          <button id="btn-close-import-modal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p id="import-summary-text">Ready to import themes from backup file.</p>
+          <div class="import-mode-selection">
+            <label class="radio-card">
+              <input type="radio" name="import-mode" value="merge" checked>
+              <div class="radio-content">
+                <strong>Merge (Recommended)</strong>
+                <span>Keep your existing domains and add/update those from the backup.</span>
+              </div>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="import-mode" value="overwrite">
+              <div class="radio-content">
+                <strong>Overwrite All</strong>
+                <span class="text-danger">Replace all your current custom themes with the backup.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-cancel-import" class="btn btn-secondary">Cancel</button>
+          <button id="btn-confirm-import" class="btn btn-primary">Proceed with Import</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="../shared/storage.js"></script>
+  <script src="../shared/editor-highlighter.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
