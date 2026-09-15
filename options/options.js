@@ -421,6 +421,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateModalToggleLabel();
     editorModal.classList.remove('hidden');
 
+    // Reset scroll and re-sync once visible
+    modalCssTextarea.scrollTop = 0;
+    modalCssTextarea.scrollLeft = 0;
+    requestAnimationFrame(() => {
+      modalEditorInstance.update();
+      modalEditorInstance.syncScroll();
+    });
+
     if (!key) {
       setTimeout(() => modalTargetInput.focus(), 50);
     } else {
