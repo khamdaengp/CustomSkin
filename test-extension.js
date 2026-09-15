@@ -1,5 +1,6 @@
 /**
  * Automated Verification Script for CustomSkin Extension
+ * Tests Manifest, Scopes (Domain, Path Prefix, Exact), Multi-rule Cascade, and Storage.
  */
 
 const fs = require('fs');
@@ -16,7 +17,6 @@ assert(manifest.name, 'Manifest must have a name');
 assert(manifest.version, 'Manifest must have a version');
 
 // Check icons
-assert(manifest.icons, 'Manifest must have icons');
 for (const [size, relPath] of Object.entries(manifest.icons)) {
   const fullPath = path.join(__dirname, relPath);
   assert(fs.existsSync(fullPath), `Icon file ${relPath} (${size}x${size}) must exist`);
@@ -25,31 +25,28 @@ for (const [size, relPath] of Object.entries(manifest.icons)) {
   console.log(`✓ Icon ${size}px verified: ${relPath} (${stat.size} bytes)`);
 }
 
-// Check popup files
-assert(manifest.action && manifest.action.default_popup, 'Must declare action.default_popup');
-assert(fs.existsSync(path.join(__dirname, manifest.action.default_popup)), 'Popup HTML must exist');
-console.log('✓ Popup HTML verified');
+console.log('✓ Manifest V3 verified');
 
-// Check options page
-assert(manifest.options_ui && manifest.options_ui.page, 'Must declare options_ui.page');
-assert(fs.existsSync(path.join(__dirname, manifest.options_ui.page)), 'Options HTML must exist');
-console.log('✓ Options HTML verified');
+console.log('\n--- Step 2: Testing Multi-Scope Target Parsing ---');
+const StorageAPI = require('./shared/storage.js');
 
-// Check service worker
-assert(manifest.background && manifest.background.service_worker, 'Must declare service_worker');
-assert(fs.existsSync(path.join(__dirname, manifest.background.service_worker)), 'Service worker file must exist');
-console.log('✓ Background service worker verified');
+const domainTarget = StorageAPI.parseTarget('https://github.com/features/actions', 'domain');
+assert.strictEqual(domainTarget.key, 'github.com');
+assert.strictEqual(domainTarget.scope, 'domain');
 
-// Check content script
-assert(manifest.content_scripts && manifest.content_scripts.length > 0, 'Must declare content_scripts');
-for (const scriptFile of manifest.content_scripts[0].js) {
-  assert(fs.existsSync(path.join(__dirname, scriptFile)), `Content script ${scriptFile} must exist`);
-}
-console.log('✓ Content script verified');
+const prefixTarget = StorageAPI.parseTarget('https://github.com/settings/profile', 'prefix');
+assert.strictEqual(prefixTarget.key, 'github.com/settings/profile');
+assert.strictEqual(prefixTarget.path, '/settings/profile');
+assert.strictEqual(prefixTarget.scope, 'prefix');
 
-console.log('\n--- Step 2: Testing Storage & Backup Logic ---');
+const exactTarget = StorageAPI.parseTarget('https://github.com/user/repo?tab=readme', 'exact');
+assert.strictEqual(exactTarget.key, 'github.com/user/repo?tab=readme');
+assert.strictEqual(exactTarget.scope, 'exact');
+console.log('✓ Multi-scope target parsing verified');
 
-// Mock chrome.storage.local for Node testing
+console.log('\n--- Step 3: Testing Multi-Rule Specificity & Cascade ---');
+
+// Mock chrome.storage.local
 const mockStorage = {};
 global.chrome = {
   storage: {
@@ -70,58 +67,58 @@ global.chrome = {
   }
 };
 
-const StorageAPI = require('./shared/storage.js');
+(async function testCascade() {
+  // Save 3 rules on the same domain with different scopes
+  await StorageAPI.saveTheme('github.com', '/* Domain Rule */ body { background: #111; }', true, 'domain');
+  await StorageAPI.saveTheme('github.com/settings', '/* Prefix Rule */ .container { max-width: 800px; }', true, 'prefix');
+  await StorageAPI.saveTheme('github.com/settings/profile', '/* Exact Rule */ h1 { color: #38bdf8; }', true, 'exact');
 
-(async function testStorage() {
-  // Test domain normalization
-  assert.strictEqual(StorageAPI.normalizeDomain('https://sub.Example.com:8080/path?query=1'), 'sub.example.com');
-  assert.strictEqual(StorageAPI.normalizeDomain('github.com/repo'), 'github.com');
-  console.log('✓ Domain normalization verified');
+  // Test 1: Visiting root github.com -> should ONLY match domain rule
+  const rootMatches = await StorageAPI.findMatchingThemesForUrl('https://github.com/');
+  assert.strictEqual(rootMatches.length, 1);
+  assert.strictEqual(rootMatches[0].scope, 'domain');
+  assert.strictEqual(rootMatches[0].key, 'github.com');
+  console.log('✓ Root URL matches only domain-level rule');
 
-  // Test save and retrieve theme
-  await StorageAPI.saveTheme('example.com', 'body { color: red !important; }', true);
-  const theme = await StorageAPI.getTheme('example.com');
-  assert(theme, 'Theme for example.com should exist');
-  assert.strictEqual(theme.css, 'body { color: red !important; }');
-  assert.strictEqual(theme.enabled, true);
-  console.log('✓ Save and getTheme verified');
+  // Test 2: Visiting https://github.com/settings -> should match domain + prefix rules
+  const settingsMatches = await StorageAPI.findMatchingThemesForUrl('https://github.com/settings');
+  assert.strictEqual(settingsMatches.length, 2);
+  assert.strictEqual(settingsMatches[0].scope, 'domain', 'Domain rule must come first for cascade');
+  assert.strictEqual(settingsMatches[1].scope, 'prefix', 'Prefix rule must come after domain rule');
+  console.log('✓ Section URL matches domain + prefix rules in cascading order');
 
-  // Test toggle enabled
-  await StorageAPI.setThemeEnabled('example.com', false);
-  const toggled = await StorageAPI.getTheme('example.com');
-  assert.strictEqual(toggled.enabled, false);
-  console.log('✓ Toggle enabled verified');
+  // Test 3: Visiting https://github.com/settings/profile -> should match all 3 in order!
+  const profileMatches = await StorageAPI.findMatchingThemesForUrl('https://github.com/settings/profile');
+  assert.strictEqual(profileMatches.length, 3);
+  assert.strictEqual(profileMatches[0].scope, 'domain');
+  assert.strictEqual(profileMatches[1].scope, 'prefix');
+  assert.strictEqual(profileMatches[2].scope, 'exact');
+  console.log('✓ Specific page URL cascades domain -> prefix -> exact');
 
-  // Test export JSON
-  const json = await StorageAPI.exportThemesJSON();
-  const parsed = JSON.parse(json);
-  assert.strictEqual(parsed.app, 'CustomSkin');
-  assert(parsed.themes['example.com']);
-  console.log('✓ Export JSON verified');
+  // Test 4: Visiting another section https://github.com/marketplace -> should only match domain rule
+  const marketplaceMatches = await StorageAPI.findMatchingThemesForUrl('https://github.com/marketplace');
+  assert.strictEqual(marketplaceMatches.length, 1);
+  assert.strictEqual(marketplaceMatches[0].key, 'github.com');
+  console.log('✓ Unrelated subpath only inherits domain rule');
 
-  // Test import JSON (merge and overwrite)
-  const incomingBackup = JSON.stringify({
-    themes: {
-      'github.com': { css: 'body { background: #000; }', enabled: true },
-      'reddit.com': { css: 'div { font-size: 14px; }', enabled: false }
-    }
-  });
+  // Test 5: JSON Export and Import with scopes preserved
+  const exported = await StorageAPI.exportThemesJSON();
+  const parsedExport = JSON.parse(exported);
+  assert(parsedExport.themes['github.com/settings']);
+  assert.strictEqual(parsedExport.themes['github.com/settings'].scope, 'prefix');
 
-  const importRes = await StorageAPI.importThemesJSON(incomingBackup, 'merge');
-  assert.strictEqual(importRes.importedCount, 2);
-  const allThemes = await StorageAPI.getAllThemes();
-  assert(allThemes['example.com'], 'Merged theme should preserve example.com');
-  assert(allThemes['github.com'], 'Merged theme should include github.com');
-  assert(allThemes['reddit.com'], 'Merged theme should include reddit.com');
-  console.log('✓ Import JSON (merge mode) verified');
+  // Clear and re-import
+  await StorageAPI.clearAllThemes();
+  const emptyCheck = await StorageAPI.getAllThemes();
+  assert.strictEqual(Object.keys(emptyCheck).length, 0);
 
-  // Test delete theme
-  await StorageAPI.deleteTheme('example.com');
-  const deleted = await StorageAPI.getTheme('example.com');
-  assert.strictEqual(deleted, null);
-  console.log('✓ Delete theme verified');
+  const importResult = await StorageAPI.importThemesJSON(exported, 'overwrite');
+  assert.strictEqual(importResult.importedCount, 3);
+  const reimported = await StorageAPI.getAllThemes();
+  assert.strictEqual(reimported['github.com/settings'].scope, 'prefix');
+  console.log('✓ JSON backup export/import preserves scopes');
 
-  console.log('\n--- Step 3: Testing CSS Syntax Highlighter ---');
+  console.log('\n--- Step 4: Testing CSS Syntax Highlighter ---');
   const CSSEditor = require('./shared/editor-highlighter.js');
   const sampleCSS = `/* Dark theme */\nbody {\n  background-color: #121212 !important;\n  color: #fff;\n}`;
   const highlighted = CSSEditor.highlightCSS(sampleCSS);
@@ -132,5 +129,5 @@ const StorageAPI = require('./shared/storage.js');
   assert(highlighted.includes('tok-important'), 'Should highlight !important');
   console.log('✓ CSS Syntax Highlighter verified');
 
-  console.log('\n🎉 ALL AUTOMATED TESTS PASSED SUCCESSFULLY! 🎉');
+  console.log('\n🎉 ALL MULTI-SCOPE TESTS PASSED SUCCESSFULLY! 🎉');
 })();

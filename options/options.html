@@ -15,7 +15,7 @@
           <img src="../icons/icon-48.png" alt="CustomSkin" class="brand-logo">
           <div class="brand-text">
             <h1>CustomSkin</h1>
-            <span class="brand-tagline">Theme & Style Manager</span>
+            <span class="brand-tagline">Custom CSS Theme & Subpage Manager</span>
           </div>
         </div>
         <div class="header-actions">
@@ -37,12 +37,12 @@
           </label>
           <input type="file" id="import-file-input" accept=".json,application/json" class="visually-hidden">
           
-          <button id="btn-add-domain" class="btn btn-primary" title="Add a custom theme for a new domain">
+          <button id="btn-add-domain" class="btn btn-primary" title="Add a custom theme for a new domain or subpath">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            Add Domain
+            Add Theme / Path
           </button>
         </div>
       </div>
@@ -50,17 +50,26 @@
 
     <!-- Main Content Area -->
     <main class="main-container">
-      <!-- Search & Stats Toolbar -->
+      <!-- Search & Scope Filter Toolbar -->
       <section class="toolbar">
         <div class="search-box">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input type="text" id="search-input" placeholder="Search customized domains..." autocomplete="off">
+          <input type="text" id="search-input" placeholder="Search domains or paths..." autocomplete="off">
           <button id="btn-clear-search" class="clear-search hidden" title="Clear search">&times;</button>
         </div>
+
+        <!-- Scope Filter Tabs -->
+        <div class="filter-tabs" id="filter-tabs">
+          <button class="tab-btn active" data-filter="all">All (<span id="count-all">0</span>)</button>
+          <button class="tab-btn" data-filter="domain">Domains (<span id="count-domain">0</span>)</button>
+          <button class="tab-btn" data-filter="prefix">Paths (<span id="count-prefix">0</span>)</button>
+          <button class="tab-btn" data-filter="exact">Exact URLs (<span id="count-exact">0</span>)</button>
+        </div>
+
         <div class="stats-counter" id="stats-counter">
-          0 domains customized
+          0 rules total
         </div>
       </section>
 
@@ -74,15 +83,15 @@
         <div id="empty-state" class="empty-state hidden">
           <div class="empty-icon">🎨</div>
           <h2>No Custom Themes Yet</h2>
-          <p>You haven't styled any websites yet. Visit any site and click the CustomSkin extension icon in your browser toolbar, or click "Add Domain" above to create one right now!</p>
-          <button id="btn-empty-add" class="btn btn-primary">+ Add Your First Domain</button>
+          <p>You haven't styled any websites or paths yet. Visit any site and click the CustomSkin extension icon in your toolbar, or click "Add Theme / Path" above to create one right now!</p>
+          <button id="btn-empty-add" class="btn btn-primary">+ Add Your First Theme</button>
         </div>
 
         <!-- Search No Results State -->
         <div id="no-results" class="empty-state hidden">
           <div class="empty-icon">🔍</div>
-          <h2>No Matching Domains</h2>
-          <p>No customized websites matched your search query.</p>
+          <h2>No Matching Rules</h2>
+          <p>No customized websites or paths matched your search query or filter.</p>
         </div>
       </section>
     </main>
@@ -96,13 +105,32 @@
         </div>
 
         <div class="modal-body">
+          <!-- Scope Selection in Modal -->
           <div class="form-group">
-            <label for="modal-domain-input">Website Domain</label>
-            <div class="domain-input-wrapper">
-              <span class="domain-prefix">https://</span>
-              <input type="text" id="modal-domain-input" placeholder="example.com" spellcheck="false" autocomplete="off">
+            <label>Target Scope</label>
+            <div class="modal-scope-selector" id="modal-scope-selector">
+              <label class="scope-radio-label">
+                <input type="radio" name="modal-scope" value="domain" checked>
+                <span>🌐 Entire Domain</span>
+              </label>
+              <label class="scope-radio-label">
+                <input type="radio" name="modal-scope" value="prefix">
+                <span>📁 Path Prefix</span>
+              </label>
+              <label class="scope-radio-label">
+                <input type="radio" name="modal-scope" value="exact">
+                <span>🎯 Exact URL</span>
+              </label>
             </div>
-            <span class="form-hint">Enter the target hostname (e.g. <code>github.com</code> or <code>reddit.com</code>)</span>
+          </div>
+
+          <div class="form-group">
+            <label for="modal-target-input" id="modal-target-label">Target Website / Path</label>
+            <div class="domain-input-wrapper">
+              <span class="domain-prefix" id="modal-input-prefix">https://</span>
+              <input type="text" id="modal-target-input" placeholder="example.com or example.com/blog" spellcheck="false" autocomplete="off">
+            </div>
+            <span class="form-hint" id="modal-input-hint">Enter the domain (e.g. <code>github.com</code> or <code>reddit.com/r/webdev</code>)</span>
           </div>
 
           <div class="form-group-toggle">
@@ -149,7 +177,7 @@
     <div id="import-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
       <div class="modal-card modal-sm">
         <div class="modal-header">
-          <h2>Import Themes</h2>
+          <h2>Import Themes & Paths</h2>
           <button id="btn-close-import-modal" class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
@@ -159,14 +187,14 @@
               <input type="radio" name="import-mode" value="merge" checked>
               <div class="radio-content">
                 <strong>Merge (Recommended)</strong>
-                <span>Keep your existing domains and add/update those from the backup.</span>
+                <span>Keep your existing themes/paths and add/update those from the backup.</span>
               </div>
             </label>
             <label class="radio-card">
               <input type="radio" name="import-mode" value="overwrite">
               <div class="radio-content">
                 <strong>Overwrite All</strong>
-                <span class="text-danger">Replace all your current custom themes with the backup.</span>
+                <span class="text-danger">Replace all your current custom themes and paths with the backup.</span>
               </div>
             </label>
           </div>

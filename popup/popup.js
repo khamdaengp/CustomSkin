@@ -1,7 +1,6 @@
 /**
  * CustomSkin - Popup Controller
- * Manages active tab detection, live CSS injection, enable/disable toggling,
- * storage synchronization, and syntax-highlighted editor interactions.
+ * Supports multi-scope targeting: Entire Site (Domain), Path Prefix, and Exact Page URL.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -10,7 +9,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const themeToggle = document.getElementById('theme-toggle');
   const toggleLabel = document.getElementById('toggle-label');
   const restrictedNotice = document.getElementById('restricted-notice');
-  const editorSection = document.getElementById('editor-section');
+  const scopeBar = document.getElementById('scope-bar');
+  const activeRulesBadge = document.getElementById('active-rules-badge');
+  const targetPatternText = document.getElementById('target-pattern-text');
+  const editorHeading = document.getElementById('editor-heading');
+
+  const scopeBtns = {
+    domain: document.getElementById('scope-btn-domain'),
+    prefix: document.getElementById('scope-btn-prefix'),
+    exact: document.getElementById('scope-btn-exact')
+  };
+
   const btnApply = document.getElementById('btn-apply');
   const btnReset = document.getElementById('btn-reset');
   const btnQuickTemplate = document.getElementById('btn-quick-template');
@@ -22,12 +31,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const lineNumbers = document.getElementById('line-numbers');
   const editorStats = document.getElementById('editor-stats');
 
+  // State
   let activeTab = null;
-  let activeDomain = '';
+  let tabParsedUrl = null;
+  let currentScope = 'domain'; // 'domain' | 'prefix' | 'exact'
+  let scopeTargets = { domain: '', prefix: '', exact: '' };
   let editorInstance = null;
   let toastTimer = null;
 
-  // 1. Initialize enhanced CSS editor
+  // Initialize CSS editor
   editorInstance = new CSSEditor({
     textarea: cssTextarea,
     highlightElement: highlightCode,
@@ -35,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     statsElement: editorStats
   });
 
-  // 2. Show toast feedback helper
+  // Helper: Toast
   function showToast(message, type = 'success') {
     if (toastTimer) clearTimeout(toastTimer);
     toastEl.textContent = message;
@@ -47,7 +59,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 2200);
   }
 
-  // 3. Update toggle switch label UI
   function updateToggleUI(enabled) {
     themeToggle.checked = enabled;
     if (enabled) {
@@ -59,34 +70,75 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 4. Send message to tab content script with fallback injection
+  // Send message to tab content script with fallback injection
   async function sendTabMessage(tabId, messagePayload) {
     try {
       return await chrome.tabs.sendMessage(tabId, messagePayload);
     } catch (err) {
-      // Content script may not be loaded yet if the tab was open before extension install
       try {
         await chrome.scripting.executeScript({
           target: { tabId },
           files: ['content/content-script.js']
         });
-        // Retry message after script injection
         return await chrome.tabs.sendMessage(tabId, messagePayload);
       } catch (fallbackErr) {
-        console.warn('[CustomSkin] Could not inject content script:', fallbackErr);
+        console.warn('[CustomSkin] Script injection fallback failed:', fallbackErr);
         return null;
       }
     }
   }
 
-  // 5. Detect active tab and domain
+  // Refresh the "X rules active" badge
+  async function refreshActiveRulesBadge() {
+    if (!activeTab || !activeTab.url) return;
+    try {
+      const matches = await CustomSkinStorage.findMatchingThemesForUrl(activeTab.url);
+      const activeCount = matches.filter(m => m.enabled && m.css && m.css.trim()).length;
+      activeRulesBadge.textContent = `${activeCount} ${activeCount === 1 ? 'rule' : 'rules'} active`;
+    } catch {
+      activeRulesBadge.textContent = '0 rules active';
+    }
+  }
+
+  // Load CSS for the currently selected scope
+  async function loadScopeData(scope) {
+    currentScope = scope;
+    const targetKey = scopeTargets[scope];
+
+    // Update active button state
+    Object.keys(scopeBtns).forEach(s => {
+      scopeBtns[s].classList.toggle('active', s === scope);
+    });
+
+    // Update target pill text
+    if (scope === 'domain') {
+      targetPatternText.textContent = `${targetKey}/* (all pages)`;
+      editorHeading.textContent = `Site-Wide CSS (${targetKey})`;
+    } else if (scope === 'prefix') {
+      targetPatternText.textContent = `${targetKey}/* (section)`;
+      editorHeading.textContent = `Section CSS (${targetKey}/*)`;
+    } else {
+      targetPatternText.textContent = `${targetKey} (exact page)`;
+      editorHeading.textContent = `Page CSS (${targetKey})`;
+    }
+
+    // Fetch theme for this specific scope target
+    const theme = await CustomSkinStorage.getTheme(targetKey);
+    if (theme) {
+      editorInstance.setValue(theme.css || '');
+      updateToggleUI(theme.enabled !== false);
+    } else {
+      editorInstance.setValue('');
+      updateToggleUI(true);
+    }
+  }
+
+  // 1. Detect Active Tab and Initialize
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     activeTab = tab;
 
-    if (!tab || !tab.url) {
-      throw new Error('No active tab detected');
-    }
+    if (!tab || !tab.url) throw new Error('No active tab');
 
     const url = tab.url;
     const isRestricted = url.startsWith('chrome://') || 
@@ -98,6 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isRestricted) {
       currentDomainEl.textContent = 'System / Restricted Page';
       restrictedNotice.classList.remove('hidden');
+      scopeBar.classList.add('hidden');
       themeToggle.disabled = true;
       btnApply.disabled = true;
       btnReset.disabled = true;
@@ -105,29 +158,64 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    activeDomain = CustomSkinStorage.normalizeDomain(url);
-    currentDomainEl.textContent = activeDomain || 'Unknown domain';
-    currentDomainEl.title = `${activeDomain} (${url})`;
-
-    // Load existing theme for this domain
-    const existingTheme = await CustomSkinStorage.getTheme(activeDomain);
-    if (existingTheme) {
-      editorInstance.setValue(existingTheme.css || '');
-      updateToggleUI(existingTheme.enabled !== false);
-    } else {
-      editorInstance.setValue('');
-      updateToggleUI(true);
+    tabParsedUrl = new URL(url);
+    const hostname = tabParsedUrl.hostname.toLowerCase();
+    let pathname = tabParsedUrl.pathname || '/';
+    if (pathname.length > 1 && pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
     }
 
+    // Determine first-level path prefix (e.g. /settings/profile -> /settings)
+    const pathParts = pathname.split('/').filter(Boolean);
+    const prefixPath = pathParts.length > 0 ? '/' + pathParts[0] : '/';
+
+    // Compute target keys for the 3 scopes
+    scopeTargets.domain = hostname;
+    scopeTargets.prefix = hostname + (prefixPath === '/' ? '' : prefixPath);
+    scopeTargets.exact = hostname + pathname + (tabParsedUrl.search || '');
+
+    currentDomainEl.textContent = hostname;
+    currentDomainEl.title = url;
+
+    // Check if the page is just the root domain, or has subpaths
+    const hasPath = pathname !== '/' && pathname.length > 1;
+    if (!hasPath) {
+      // If root page, disable prefix button (it's identical to domain)
+      scopeBtns.prefix.title = 'Current page is root; identical to Entire Site';
+    }
+
+    // Check if user already has a more specific rule for this path or page
+    const allMatches = await CustomSkinStorage.findMatchingThemesForUrl(url);
+    const exactMatch = allMatches.find(m => m.scope === 'exact');
+    const prefixMatch = allMatches.find(m => m.scope === 'prefix');
+
+    if (exactMatch) {
+      await loadScopeData('exact');
+    } else if (prefixMatch) {
+      await loadScopeData('prefix');
+    } else {
+      await loadScopeData('domain');
+    }
+
+    await refreshActiveRulesBadge();
+
   } catch (err) {
-    console.error('[CustomSkin] Initialization error:', err);
+    console.error('[CustomSkin] Init error:', err);
     currentDomainEl.textContent = 'Unable to detect site';
     showToast('Failed to detect website', 'danger');
   }
 
-  // 6. Handle Apply Button click (Live update active tab + persist to storage)
+  // 2. Scope Button Click Handlers
+  Object.keys(scopeBtns).forEach(scope => {
+    scopeBtns[scope].addEventListener('click', () => {
+      loadScopeData(scope);
+    });
+  });
+
+  // 3. Apply Button (Save & Live Inject for current scope)
   btnApply.addEventListener('click', async () => {
-    if (!activeDomain) return;
+    const targetKey = scopeTargets[currentScope];
+    if (!targetKey) return;
 
     const css = editorInstance.getValue();
     const isEnabled = themeToggle.checked;
@@ -135,19 +223,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnApply.disabled = true;
 
     try {
-      // Save in chrome.storage.local
-      await CustomSkinStorage.saveTheme(activeDomain, css, isEnabled);
+      await CustomSkinStorage.saveTheme(targetKey, css, isEnabled, currentScope);
 
-      // Send live message to active tab
       if (activeTab && activeTab.id) {
-        await sendTabMessage(activeTab.id, {
-          action: 'APPLY_STYLE',
-          css: css,
-          enabled: isEnabled
-        });
+        await sendTabMessage(activeTab.id, { action: 'RELOAD_THEMES' });
       }
 
-      showToast('Theme applied live!', 'success');
+      await refreshActiveRulesBadge();
+      showToast(`Applied to ${currentScope} (${targetKey})!`, 'success');
     } catch (err) {
       console.error('[CustomSkin] Apply failed:', err);
       showToast('Error applying styles', 'danger');
@@ -156,73 +239,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 7. Handle Toggle switch change (Enable / Disable live)
+  // 4. Toggle Switch Change
   themeToggle.addEventListener('change', async () => {
-    if (!activeDomain) return;
+    const targetKey = scopeTargets[currentScope];
+    if (!targetKey) return;
 
     const isEnabled = themeToggle.checked;
     updateToggleUI(isEnabled);
 
     try {
-      // Update in storage
-      await CustomSkinStorage.setThemeEnabled(activeDomain, isEnabled);
+      await CustomSkinStorage.setThemeEnabled(targetKey, isEnabled);
 
-      // Update active tab live
       if (activeTab && activeTab.id) {
-        const currentCss = editorInstance.getValue();
-        await sendTabMessage(activeTab.id, {
-          action: 'APPLY_STYLE',
-          css: currentCss,
-          enabled: isEnabled
-        });
+        await sendTabMessage(activeTab.id, { action: 'RELOAD_THEMES' });
       }
 
-      showToast(isEnabled ? 'Theme enabled' : 'Theme paused', 'success');
+      await refreshActiveRulesBadge();
+      showToast(isEnabled ? 'Style active' : 'Style paused', 'success');
     } catch (err) {
       console.error('[CustomSkin] Toggle error:', err);
-      showToast('Error updating theme state', 'danger');
+      showToast('Error updating state', 'danger');
     }
   });
 
-  // 8. Handle Reset Button click (Clear styles for this domain)
+  // 5. Reset Button (Clears the selected scope)
   btnReset.addEventListener('click', async () => {
-    if (!activeDomain) return;
+    const targetKey = scopeTargets[currentScope];
+    if (!targetKey) return;
 
     const currentVal = editorInstance.getValue().trim();
     if (!currentVal) {
-      showToast('Nothing to reset', 'default');
+      showToast('Nothing to reset in this scope', 'default');
       return;
     }
 
-    const confirmed = confirm(`Are you sure you want to reset and delete custom styles for ${activeDomain}?`);
+    const confirmed = confirm(`Are you sure you want to reset styles for ${currentScope}: "${targetKey}"?`);
     if (!confirmed) return;
 
     try {
-      await CustomSkinStorage.deleteTheme(activeDomain);
+      await CustomSkinStorage.deleteTheme(targetKey);
       editorInstance.setValue('');
       updateToggleUI(true);
 
       if (activeTab && activeTab.id) {
-        await sendTabMessage(activeTab.id, { action: 'REMOVE_STYLE' });
+        await sendTabMessage(activeTab.id, { action: 'RELOAD_THEMES' });
       }
 
-      showToast(`Styles cleared for ${activeDomain}`, 'success');
+      await refreshActiveRulesBadge();
+      showToast(`Cleared styles for ${targetKey}`, 'success');
     } catch (err) {
       console.error('[CustomSkin] Reset error:', err);
-      showToast('Error clearing styles', 'danger');
+      showToast('Error resetting styles', 'danger');
     }
   });
 
-  // 9. Quick Dark Theme template
+  // 6. Quick Dark Theme Template
   btnQuickTemplate.addEventListener('click', () => {
+    const target = scopeTargets[currentScope] || 'this target';
     const template = 
-`/* Custom Dark Theme for ${activeDomain || 'this site'} */
+`/* Custom Dark Theme for ${target} */
 html, body {
   background-color: #12141a !important;
   color: #e2e8f0 !important;
 }
 
-/* Links & Accents */
+/* Links & Highlights */
 a {
   color: #6366f1 !important;
 }
@@ -252,7 +333,7 @@ header, nav, aside, [class*="card"], [class*="box"], [class*="panel"] {
     showToast('Template inserted! Click Apply to test.');
   });
 
-  // 10. Open Options Page
+  // 7. Open Options Page
   btnOpenOptions.addEventListener('click', () => {
     if (chrome.runtime.openOptionsPage) {
       chrome.runtime.openOptionsPage();
