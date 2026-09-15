@@ -23,13 +23,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnApply = document.getElementById('btn-apply');
   const btnReset = document.getElementById('btn-reset');
   const btnQuickTemplate = document.getElementById('btn-quick-template');
+  const btnToggleWrap = document.getElementById('btn-toggle-wrap');
   const btnOpenOptions = document.getElementById('btn-open-options');
   const toastEl = document.getElementById('toast');
 
   const cssTextarea = document.getElementById('css-textarea');
+  const highlightBackdrop = document.getElementById('highlight-backdrop');
   const highlightCode = document.getElementById('highlight-code');
   const lineNumbers = document.getElementById('line-numbers');
   const editorStats = document.getElementById('editor-stats');
+  const editorWrapper = document.querySelector('.editor-wrapper');
 
   // State
   let activeTab = null;
@@ -43,9 +46,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   editorInstance = new CSSEditor({
     textarea: cssTextarea,
     highlightElement: highlightCode,
+    highlightBackdrop: highlightBackdrop,
     lineNumbersElement: lineNumbers,
     statsElement: editorStats
   });
+
+  // Toggle word wrap
+  if (btnToggleWrap && editorWrapper) {
+    let isWrapped = false;
+    btnToggleWrap.addEventListener('click', () => {
+      isWrapped = !isWrapped;
+      editorWrapper.classList.toggle('wrap-mode', isWrapped);
+      btnToggleWrap.textContent = isWrapped ? 'Wrap: On' : 'Wrap: Off';
+      editorInstance.syncScroll();
+    });
+  }
 
   // Helper: Toast
   function showToast(message, type = 'success') {

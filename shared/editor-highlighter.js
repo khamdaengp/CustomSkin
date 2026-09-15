@@ -14,9 +14,23 @@ class CSSEditor {
    * @param {HTMLElement} [options.statsElement] - Optional element to display line/char count
    * @param {Function} [options.onChange] - Callback fired when value changes
    */
-  constructor({ textarea, highlightElement, lineNumbersElement, statsElement, onChange }) {
+  constructor({ textarea, highlightElement, highlightBackdrop, lineNumbersElement, statsElement, onChange }) {
     this.textarea = textarea;
     this.highlightElement = highlightElement;
+
+    // Resolve the actual scrollable element for the highlight backdrop
+    if (highlightBackdrop) {
+      this.highlightContainer = highlightBackdrop;
+    } else if (this.highlightElement) {
+      if (this.highlightElement.tagName === 'CODE' && this.highlightElement.parentElement) {
+        this.highlightContainer = this.highlightElement.parentElement;
+      } else {
+        this.highlightContainer = this.highlightElement;
+      }
+    } else {
+      this.highlightContainer = null;
+    }
+
     this.lineNumbersElement = lineNumbersElement;
     this.statsElement = statsElement;
     this.onChange = onChange;
@@ -27,10 +41,24 @@ class CSSEditor {
   init() {
     if (!this.textarea) return;
 
-    // Attach keyboard event listeners
+    // Attach keyboard and scroll event listeners
     this.textarea.addEventListener('keydown', (e) => this.handleKeyDown(e));
     this.textarea.addEventListener('input', () => this.handleInput());
-    this.textarea.addEventListener('scroll', () => this.syncScroll());
+    this.textarea.addEventListener('scroll', () => this.syncScroll(), { passive: true });
+
+    // Ensure sync when moving cursor with arrow keys, page up/down, or clicking
+    this.textarea.addEventListener('keyup', () => this.syncScroll(), { passive: true });
+    this.textarea.addEventListener('mouseup', () => this.syncScroll(), { passive: true });
+    this.textarea.addEventListener('click', () => this.syncScroll(), { passive: true });
+
+    // Allow scrolling when mouse is over the line numbers column
+    if (this.lineNumbersElement) {
+      this.lineNumbersElement.addEventListener('wheel', (e) => {
+        this.textarea.scrollTop += e.deltaY;
+        this.textarea.scrollLeft += e.deltaX;
+        this.syncScroll();
+      }, { passive: true });
+    }
 
     // Initial render
     this.update();
@@ -40,9 +68,9 @@ class CSSEditor {
    * Synchronizes scroll position between textarea and background highlight/lines
    */
   syncScroll() {
-    if (this.highlightElement) {
-      this.highlightElement.scrollTop = this.textarea.scrollTop;
-      this.highlightElement.scrollLeft = this.textarea.scrollLeft;
+    if (this.highlightContainer) {
+      this.highlightContainer.scrollTop = this.textarea.scrollTop;
+      this.highlightContainer.scrollLeft = this.textarea.scrollLeft;
     }
     if (this.lineNumbersElement) {
       this.lineNumbersElement.scrollTop = this.textarea.scrollTop;

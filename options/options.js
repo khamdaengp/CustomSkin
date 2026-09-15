@@ -37,6 +37,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const modalLineNumbers = document.getElementById('modal-line-numbers');
   const modalEditorStats = document.getElementById('modal-editor-stats');
   const btnModalTemplate = document.getElementById('btn-modal-template');
+  const btnModalWrap = document.getElementById('btn-modal-wrap');
+  const modalHighlightBackdrop = document.getElementById('modal-highlight-backdrop');
+  const modalEditorWrapper = document.querySelector('.modal-editor-wrapper');
   const btnSaveModal = document.getElementById('btn-save-modal');
   const btnCancelModal = document.getElementById('btn-cancel-modal');
   const btnCloseModal = document.getElementById('btn-close-modal');
@@ -62,9 +65,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   modalEditorInstance = new CSSEditor({
     textarea: modalCssTextarea,
     highlightElement: modalHighlightCode,
+    highlightBackdrop: modalHighlightBackdrop,
     lineNumbersElement: modalLineNumbers,
     statsElement: modalEditorStats
   });
+
+  // Modal word wrap toggle
+  if (btnModalWrap && modalEditorWrapper) {
+    let isModalWrapped = false;
+    btnModalWrap.addEventListener('click', () => {
+      isModalWrapped = !isModalWrapped;
+      modalEditorWrapper.classList.toggle('wrap-mode', isModalWrapped);
+      btnModalWrap.textContent = isModalWrapped ? 'Wrap: On' : 'Wrap: Off';
+      modalEditorInstance.syncScroll();
+    });
+  }
 
   // Helper: Toast notification
   function showToast(message, type = 'success') {

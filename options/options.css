@@ -744,9 +744,7 @@ input:checked + .slider:before {
   font-size: 13px;
   line-height: 1.5;
   tab-size: 2;
-  white-space: pre-wrap;
-  word-break: break-all;
-  overflow-y: auto;
+  white-space: pre;
   border: none;
   outline: none;
 }
@@ -756,6 +754,7 @@ input:checked + .slider:before {
   pointer-events: none;
   background: transparent;
   z-index: 1;
+  overflow: hidden;
 }
 
 .css-textarea {
@@ -764,7 +763,19 @@ input:checked + .slider:before {
   background: transparent;
   resize: none;
   z-index: 2;
+  overflow: auto;
   user-select: text;
+}
+
+.css-textarea::selection {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+.modal-editor-wrapper.wrap-mode .highlight-backdrop,
+.modal-editor-wrapper.wrap-mode .css-textarea {
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .editor-footer {
